@@ -11,7 +11,6 @@ body{margin:0;background:#08131d;color:#edf5fa;font-family:Arial,system-ui,sans-
 header{display:flex;justify-content:space-between;align-items:center;padding:2.5vh 3vw;border-bottom:1px solid #294052}
 h1{font-size:clamp(22px,2.8vw,48px);margin:5px 0;letter-spacing:.06em}
 .tag{color:#69d7c1;font-size:clamp(11px,1vw,18px)}
-.muted{color:#a4b9c6}
 #clock{text-align:right;font-size:clamp(13px,1.4vw,24px)}
 main{padding:3vh 3vw 110px}
 .top{display:flex;justify-content:space-between;align-items:center;gap:12px}
@@ -22,6 +21,7 @@ h2{font-size:clamp(23px,3vw,52px);margin:0 0 2vh}
 .tile h3{font-size:clamp(13px,1.2vw,22px);font-weight:500;color:#a5bccc;margin:0 0 1.5vh}
 .value{font-size:clamp(26px,3vw,54px);font-weight:650}
 .note{font-size:clamp(11px,1vw,17px);color:#a6bdcb;margin-top:1vh;line-height:1.4}
+.spark{width:100%;height:8vh;margin-top:12px}
 .notice{color:#ffd28c;margin-top:2vh;font-size:clamp(12px,1vw,17px)}
 footer{display:flex;justify-content:space-between;align-items:center;gap:12px;position:fixed;bottom:0;left:0;right:0;padding:12px 3vw;background:#0b1a26;border-top:1px solid #294052;color:#a3bac9;font-size:12px}
 .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -40,7 +40,7 @@ header{gap:10px}
 <header>
   <div>
     <div class="tag">PERSONAL INTELLIGENCE DISPLAY · HOUSTON</div>
-    <h1>WORLD PULSE <span style="color:#69d7c1">/</span> V1</h1>
+    <h1>WORLD PULSE <span style="color:#69d7c1">/</span> V2</h1>
   </div>
   <div id="clock"></div>
 </header>
@@ -53,7 +53,7 @@ header{gap:10px}
   <div class="notice" id="notice"></div>
 </main>
 <footer>
-  <span id="footerSource">Sources planned: FRED · BLS · Census · EIA · market feeds</span>
+  <span id="footerSource">World Pulse · Data sources credited on each screen</span>
   <div class="controls">
     <button id="previous">◀</button>
     <button id="pause">Pause</button>
@@ -75,7 +75,9 @@ const sections = [
     'US 10Y TREASURY','USD / MXN','GOLD'
   ]],
   ['UNITED STATES ECONOMY',[
-    'CPI INFLATION','UNEMPLOYMENT','REAL GDP',
+    'U.S. INFLATION · ANNUAL',
+    'U.S. UNEMPLOYMENT · ANNUAL EST.',
+    'REAL GDP GROWTH · ANNUAL',
     'FEDERAL FUNDS RATE','MEDIAN HOUSE PRICE','REAL WAGES'
   ]],
   ['HOUSTON METRO',[
@@ -98,52 +100,91 @@ const sections = [
 ];
 
 const grid = document.getElementById('grid');
-const section = document.getElementById('section');
-const page = document.getElementById('page');
 const notice = document.getElementById('notice');
-const source = document.getElementById('footerSource');
+const footerSource = document.getElementById('footerSource');
 
 let screen = 0;
 let paused = false;
 let rotationTimer = null;
 let weather = null;
 let weatherError = '';
-
-function tile(label,value,note) {
-  const div = document.createElement('div');
-  div.className = 'tile';
-
-  const heading = document.createElement('h3');
-  heading.textContent = label;
-
-  const number = document.createElement('div');
-  number.className = 'value';
-  number.textContent = value;
-
-  const detail = document.createElement('div');
-  detail.className = 'note';
-  detail.textContent = note;
-
-  div.append(heading,number,detail);
-  return div;
-}
+let economy = {};
+let economyErrors = [];
 
 function num(value,suffix='') {
-  return typeof value === 'number'
-    ? Math.round(value) + suffix
-    : '—';
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.round(value) + suffix : '—';
+}
+
+function percent(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value.toFixed(1) + '%' : '—';
+}
+
+function tile(label,value,note,points) {
+  const outer = document.createElement('div');
+  outer.className = 'tile';
+
+  const h = document.createElement('h3');
+  h.textContent = label;
+
+  const n = document.createElement('div');
+  n.className = 'value';
+  n.textContent = value;
+
+  outer.append(h,n);
+
+  if (points && points.length > 1) {
+    const svg = document.createElementNS(
+      'http://www.w3.org/2000/svg','svg'
+    );
+    svg.setAttribute('class','spark');
+    svg.setAttribute('viewBox','0 0 320 80');
+    svg.setAttribute('preserveAspectRatio','none');
+
+    const lo = Math.min(...points);
+    const hi = Math.max(...points);
+    const spread = Math.max(hi-lo,.01);
+
+    const coords = points.map((p,i) =>
+      (i*320/(points.length-1)).toFixed(1) + ',' +
+      (70-(p-lo)/spread*58).toFixed(1)
+    ).join(' ');
+
+    const line = document.createElementNS(
+      'http://www.w3.org/2000/svg','polyline'
+    );
+    line.setAttribute('points',coords);
+    line.setAttribute('fill','none');
+    line.setAttribute('stroke','#69d7c1');
+    line.setAttribute('stroke-width','3');
+
+    svg.append(line);
+    outer.append(svg);
+  }
+
+  const d = document.createElement('div');
+  d.className = 'note';
+  d.textContent = note;
+  outer.append(d);
+
+  return outer;
 }
 
 function render() {
-  section.textContent = sections[screen][0];
-  page.textContent = `SCREEN ${screen+1} / ${sections.length}`;
+  document.getElementById('section').textContent =
+    sections[screen][0];
+
+  document.getElementById('page').textContent =
+    `SCREEN ${screen+1} / ${sections.length}`;
+
   grid.replaceChildren();
 
   if (screen === 5) {
     const c = weather?.current;
     const d = weather?.daily;
 
-    const values = c && d ? [
+    const vals = c && d ? [
       num(c.temperature_2m,'°F'),
       num(d.precipitation_probability_max?.[0],'%'),
       num(d.temperature_2m_max?.[0],'°F'),
@@ -152,45 +193,63 @@ function render() {
       num(c.relative_humidity_2m,'%')
     ] : Array(6).fill('—');
 
-    const observed = c?.time
+    const date = c?.time
       ? c.time.replace('T',' ') + ' Houston time'
-      : 'Awaiting live data';
+      : 'Awaiting data';
 
-    sections[5][1].forEach((label,i) => {
+    sections[5][1].forEach((name,i) => {
       grid.append(tile(
-        label,values[i],
-        `Open-Meteo · ${observed}`
+        name, vals[i], 'Open-Meteo · ' + date
       ));
     });
 
-    notice.textContent = weatherError
-      ? `Weather: ${weatherError}`
-      : weather
-        ? 'Live Houston weather · refresh every 15 minutes'
-        : 'Loading live Houston weather...';
+    notice.textContent = weatherError ||
+      'Live Houston weather · checks every 15 minutes';
 
-    source.textContent =
-      'Weather source: Open-Meteo · Current conditions and daily forecast';
+    footerSource.textContent =
+      'Weather: Open-Meteo · Current conditions and daily forecast';
+
+  } else if (screen === 1) {
+    const keys = ['inflation','unemployment','gdp'];
+
+    sections[1][1].forEach((name,i) => {
+      if (i >= 3) {
+        grid.append(tile(name,'—','Not connected yet'));
+        return;
+      }
+
+      const item = economy[keys[i]];
+
+      grid.append(tile(
+        name,
+        item ? percent(item.value) : '—',
+        item
+          ? `World Bank · ${item.year} · ${item.description} · last 6 annual points`
+          : 'Loading annual World Bank data...',
+        item?.points
+      ));
+    });
+
+    notice.textContent = economyErrors.length
+      ? 'Some economic feeds could not update; retrying daily.'
+      : 'Annual World Bank series · these are NOT monthly or real-time readings';
+
+    footerSource.textContent =
+      'U.S. economy: World Bank WDI · annual published observations';
 
   } else {
-    sections[screen][1].forEach(label => {
+    sections[screen][1].forEach(name => {
       grid.append(tile(
-        label,'—','Awaiting live data integration'
+        name,'—','Awaiting live data integration'
       ));
     });
 
     notice.textContent =
-      'DEMONSTRATION MODE — These indicators are not connected to live data yet.';
+      'NOT LIVE — Indicators on this screen have not been connected.';
 
-    source.textContent =
-      'Future sources: FRED · BLS · Census · EIA · market and culture feeds';
+    footerSource.textContent =
+      'Planned: FRED · BLS · EIA · Census · market and culture feeds';
   }
-}
-
-function show(offset) {
-  screen = (screen + offset + sections.length) % sections.length;
-  render();
-  startRotation();
 }
 
 function startRotation() {
@@ -200,19 +259,25 @@ function startRotation() {
     rotationTimer = setInterval(() => {
       screen = (screen + 1) % sections.length;
       render();
-    }, Number(document.getElementById('interval').value));
+    },Number(document.getElementById('interval').value));
   }
 }
 
+function show(n) {
+  screen = (screen+n+sections.length) % sections.length;
+  render();
+  startRotation();
+}
+
 document.getElementById('previous').addEventListener(
-  'click', () => show(-1)
+  'click',() => show(-1)
 );
 
 document.getElementById('next').addEventListener(
-  'click', () => show(1)
+  'click',() => show(1)
 );
 
-document.getElementById('pause').addEventListener('click', () => {
+document.getElementById('pause').addEventListener('click',() => {
   paused = !paused;
   document.getElementById('pause').textContent =
     paused ? 'Resume' : 'Pause';
@@ -249,26 +314,76 @@ async function loadWeather() {
       '&temperature_unit=fahrenheit&wind_speed_unit=mph' +
       '&timezone=America%2FChicago&forecast_days=1';
 
-    const response = await fetch(url,{cache:'no-store'});
+    const res = await fetch(url,{cache:'no-store'});
+    if (!res.ok) throw Error('Weather HTTP '+res.status);
 
-    if (!response.ok) {
-      throw new Error('Service unavailable');
-    }
-
-    const data = await response.json();
-
+    const data = await res.json();
     if (!data.current || !data.daily) {
-      throw new Error('Incomplete response');
+      throw Error('Incomplete weather response');
     }
 
     weather = data;
     weatherError = '';
 
-  } catch (error) {
-    weatherError = 'Update failed; retrying in 15 minutes';
+  } catch(e) {
+    weatherError =
+      'Weather update failed · displaying last available reading · retry in 15 minutes';
   }
 
   if (screen === 5) render();
+}
+
+const indicators = [
+  ['inflation','FP.CPI.TOTL.ZG','CPI annual percent change'],
+  ['unemployment','SL.UEM.TOTL.ZS','ILO modeled unemployment estimate'],
+  ['gdp','NY.GDP.MKTP.KD.ZG','Real GDP annual percent change']
+];
+
+async function loadEconomy() {
+  const outcomes = await Promise.allSettled(
+    indicators.map(async ([key,code,description]) => {
+      const url =
+        `https://api.worldbank.org/v2/country/USA/indicator/${code}?format=json&per_page=20`;
+
+      const res = await fetch(url,{cache:'no-store'});
+      if (!res.ok) throw Error('World Bank HTTP '+res.status);
+
+      const body = await res.json();
+      if (!Array.isArray(body) || !Array.isArray(body[1])) {
+        throw Error('Invalid economic response');
+      }
+
+      const rows = body[1].filter(x =>
+        x && typeof x.value === 'number' &&
+        Number.isFinite(x.value)
+      );
+
+      if (!rows.length) throw Error('No numeric economic observations');
+
+      rows.sort((a,b) => Number(a.date)-Number(b.date));
+      const last = rows[rows.length-1];
+
+      return [key,{
+        value:last.value,
+        year:last.date,
+        description,
+        points:rows.slice(-6).map(x=>x.value)
+      }];
+    })
+  );
+
+  economyErrors = [];
+
+  outcomes.forEach((result,i) => {
+    if (result.status === 'fulfilled') {
+      const [key,value] = result.value;
+      economy[key] = value;
+    } else {
+      economyErrors.push(indicators[i][0]);
+    }
+  });
+
+  if (screen === 1) render();
 }
 
 updateClock();
@@ -278,7 +393,10 @@ render();
 startRotation();
 
 loadWeather();
+loadEconomy();
+
 setInterval(loadWeather,15*60*1000);
+setInterval(loadEconomy,24*60*60*1000);
 </script>
 </body>
 </html>
